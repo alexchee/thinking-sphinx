@@ -73,6 +73,8 @@ module ThinkingSphinx
     
     attr_reader :environment, :configuration, :controller
     
+    @@environment = nil
+    
     # Load in the configuration settings - this will look for config/sphinx.yml
     # and parse it according to the current environment.
     # 
@@ -126,14 +128,26 @@ module ThinkingSphinx
     end
     
     def self.environment
-      Thread.current[:thinking_sphinx_environment] ||= if defined?(Merb)
-        Merb.environment
-      elsif defined?(Sinatra)
-        Sinatra::Application.environment.to_s
-      elsif defined?(RAILS_ENV)
-        RAILS_ENV
-      else
-        ENV['RAILS_ENV'] || 'development'
+      if @@environment.nil?
+        ThinkingSphinx.mutex.synchronize do
+          @@environment ||= if defined?(Merb)
+            Merb.environment
+          elsif defined?(Sinatra)
+            Sinatra::Application.environment.to_s
+          elsif defined?(RAILS_ENV)
+            RAILS_ENV
+          else
+            ENV['RAILS_ENV'] || 'development'
+          end
+        end
+      end
+      
+      @@environment
+    end
+    
+    def self.reset_environment
+      ThinkingSphinx.mutex.synchronize do
+        @@environment = nil
       end
     end
     
@@ -244,7 +258,8 @@ module ThinkingSphinx
     attr_accessor :timeout
 
     def client
-      client = Riddle::Client.new address, port
+      client = Riddle::Client.new address, port,
+        configuration.searchd.client_key
       client.max_matches = configuration.searchd.max_matches || 1000
       client.timeout = timeout || 0
       client
