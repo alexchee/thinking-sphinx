@@ -11,6 +11,21 @@ module ThinkingSphinx
   class Attribute < ThinkingSphinx::Property
     attr_accessor :query_source
     
+    SphinxTypeMappings = {
+      :multi     => :sql_attr_multi,
+      :datetime  => :sql_attr_timestamp,
+      :string    => :sql_attr_str2ordinal,
+      :float     => :sql_attr_float,
+      :boolean   => :sql_attr_bool,
+      :integer   => :sql_attr_uint,
+      :bigint    => :sql_attr_bigint,
+      :wordcount => :sql_attr_str2wordcount
+    }
+    
+    if Riddle.loaded_version.to_i > 1
+      SphinxTypeMappings[:string] = :sql_attr_string
+    end
+    
     # To create a new attribute, you'll need to pass in either a single Column
     # or an array of them, and some (optional) options.
     #
@@ -117,15 +132,7 @@ module ThinkingSphinx
     end
     
     def type_to_config
-      {
-        :multi    => :sql_attr_multi,
-        :datetime => :sql_attr_timestamp,
-        :string   => :sql_attr_str2ordinal,
-        :float    => :sql_attr_float,
-        :boolean  => :sql_attr_bool,
-        :integer  => :sql_attr_uint,
-        :bigint   => :sql_attr_bigint
-      }[type]
+      SphinxTypeMappings[type]
     end
     
     def include_as_association?
@@ -226,7 +233,7 @@ module ThinkingSphinx
       
       <<-SQL
 SELECT #{foreign_key_for_mva base_assoc}
-  #{ThinkingSphinx.unique_id_expression(offset)} AS #{quote_column('id')},
+  #{ThinkingSphinx.unique_id_expression(adapter, offset)} AS #{quote_column('id')},
   #{primary_key_for_mva(end_assoc)} AS #{quote_column(unique_name)}
 FROM #{quote_table_name base_assoc.table} #{association_joins}
       SQL

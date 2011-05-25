@@ -59,7 +59,7 @@ GROUP BY #{ sql_group_clause }
       end
 
       def sql_select_clause(offset)
-        unique_id_expr = ThinkingSphinx.unique_id_expression(offset)
+        unique_id_expr = ThinkingSphinx.unique_id_expression(adapter, offset)
 
         (
           ["#{@model.quoted_table_name}.#{quote_column(@model.primary_key_for_sphinx)} #{unique_id_expr} AS #{quote_column(@model.primary_key_for_sphinx)} "] + 
@@ -125,6 +125,15 @@ GROUP BY #{ sql_group_clause }
             types_to_crcs, @model.to_crc32)
         else
           @model.to_crc32.to_s
+        end
+      end
+      
+      def internal_class_column
+        if @model.table_exists? &&
+          @model.column_names.include?(@model.inheritance_column)
+          adapter.quote_with_table(@model.inheritance_column)
+        else
+          "'#{@model.name}'"
         end
       end
       
