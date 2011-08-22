@@ -10,18 +10,12 @@ require 'cucumber/rake/task'
 RSpec::Core::RakeTask.new
 
 desc 'Run all feature-set configurations'
-task :cucumber do |t|
-  databases = ENV['DATABASES'] || 'mysql,postgresql'
-  databases.split(',').each do |database|
-    puts   "rake cucumber:#{database}"
-    system "rake cucumber:#{database}"
-  end
-end
+task :cucumber => ['cucumber:mysql', 'cucumber:postgresql']
 
 namespace :cucumber do
   def add_task(name, description)
     Cucumber::Rake::Task.new(name, description) do |t|
-      t.cucumber_opts = "--format pretty features/*.feature DATABASE=#{name}"
+      t.cucumber_opts = "--format pretty DATABASE=#{name}"
     end
   end
 
@@ -83,4 +77,4 @@ end if defined?(Rcov)
 desc 'Generate documentation'
 YARD::Rake::YardocTask.new
 
-task :default => :spec
+task :default => [:spec, :cucumber]
