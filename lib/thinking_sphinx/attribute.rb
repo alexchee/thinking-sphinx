@@ -220,7 +220,7 @@ module ThinkingSphinx
         query += " AND #{query_delta.strip}" if delta
         "ranged-query; #{query}; #{range_query}"
       else
-        query += "WHERE #{query_delta.strip}" if delta
+        query += " WHERE #{query_delta.strip}" if delta
         "query; #{query}"
       end
     end
@@ -230,17 +230,23 @@ module ThinkingSphinx
       end_assoc  = end_association_for_mva
       raise "Could not determine SQL for MVA" if base_assoc.nil?
 
-      <<-SQL
-SELECT #{foreign_key_for_mva base_assoc}
-  #{ThinkingSphinx.unique_id_expression(adapter, offset)} AS #{quote_column('id')},
-  #{primary_key_for_mva(end_assoc)} AS #{quote_column(unique_name)}
-FROM #{quote_table_name base_assoc.table} #{association_joins}
-      SQL
+      relation = ::ActiveRecord::Relation.new(
+        base_assoc.reflection.klass, Arel::Table.new(base_assoc.table)
+      )
+
+      association_joins.each do |join|
+        join.join_type = Arel::OuterJoin
+        relation = relation.joins(join)
+      end
+
+      relation = relation.select "#{foreign_key_for_mva base_assoc} #{ThinkingSphinx.unique_id_expression(adapter, offset)} AS #{quote_column('id')}, #{primary_key_for_mva(end_assoc)} AS #{quote_column(unique_name)}"
+
+      relation.to_sql
     end
 
     def query_clause
       foreign_key = foreign_key_for_mva base_association_for_mva
-      "WHERE #{foreign_key} >= $start AND #{foreign_key} <= $end"
+      " WHERE #{foreign_key} >= $start AND #{foreign_key} <= $end"
     end
 
     def query_delta
@@ -265,7 +271,15 @@ WHERE #{@source.index.delta_object.clause(model, true)})
     end
 
     def foreign_key_for_mva(assoc)
-      quote_with_table assoc.table, assoc.reflection.primary_key_name
+      if ThinkingSphinx.rails_3_1?
+        if assoc.reflection.through_reflection
+          quote_with_table assoc.table, assoc.reflection.through_reflection.foreign_key
+        else
+          quote_with_table assoc.table, assoc.reflection.foreign_key
+        end
+      else
+        quote_with_table assoc.table, assoc.reflection.primary_key_name
+      end
     end
 
     def end_association_for_mva
@@ -289,11 +303,11 @@ WHERE #{@source.index.delta_object.clause(model, true)})
       joins = []
       assoc = end_association_for_mva
       while assoc != base_association_for_mva
-        joins << assoc.to_sql
+        joins << assoc.join
         assoc = assoc.parent
       end
 
-      joins.join(' ')
+      joins
     end
 
     def is_many_ints?

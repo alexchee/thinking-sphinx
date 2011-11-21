@@ -1,6 +1,9 @@
 require 'thinking_sphinx/active_record/attribute_updates'
+require 'thinking_sphinx/active_record/collection_proxy'
+require 'thinking_sphinx/active_record/collection_proxy_with_scopes'
 require 'thinking_sphinx/active_record/delta'
 require 'thinking_sphinx/active_record/has_many_association'
+require 'thinking_sphinx/active_record/log_subscriber'
 require 'thinking_sphinx/active_record/has_many_association_with_scopes'
 require 'thinking_sphinx/active_record/scopes'
 
@@ -12,7 +15,11 @@ module ThinkingSphinx
   module ActiveRecord
     def self.included(base)
       base.class_eval do
-        class_inheritable_array :sphinx_indexes, :sphinx_facets
+        if defined?(class_attribute)
+          class_attribute :sphinx_indexes, :sphinx_facets
+        else
+          class_inheritable_array :sphinx_indexes, :sphinx_facets
+        end
 
         extend ThinkingSphinx::ActiveRecord::ClassMethods
 
@@ -60,7 +67,7 @@ module ThinkingSphinx
           end
 
           def to_crc32s
-            (subclasses << self).collect { |klass| klass.to_crc32 }
+            (descendants << self).collect { |klass| klass.to_crc32 }
           end
 
           def sphinx_database_adapter
@@ -70,20 +77,6 @@ module ThinkingSphinx
           def sphinx_name
             self.name.underscore.tr(':/\\', '_')
           end
-
-          #
-          # The above method to_crc32s is dependant on the subclasses being loaded consistently
-          # After a reset_subclasses is called (during a Dispatcher.cleanup_application in development)
-          # Our subclasses will be lost but our context will not reload them for us.
-          #
-          # We reset the context which causes the subclasses to be reloaded next time the context is called.
-          #
-          def reset_subclasses_with_thinking_sphinx
-            reset_subclasses_without_thinking_sphinx
-            ThinkingSphinx.reset_context!
-          end
-
-          alias_method_chain :reset_subclasses, :thinking_sphinx
 
           private
 
@@ -101,12 +94,14 @@ module ThinkingSphinx
         end
       end
 
-      ::ActiveRecord::Associations::HasManyAssociation.send(
-        :include, ThinkingSphinx::ActiveRecord::HasManyAssociation
-      )
-      ::ActiveRecord::Associations::HasManyThroughAssociation.send(
-        :include, ThinkingSphinx::ActiveRecord::HasManyAssociation
-      )
+      if ThinkingSphinx.rails_3_1?
+        assoc_mixin = ThinkingSphinx::ActiveRecord::CollectionProxy
+        ::ActiveRecord::Associations::CollectionProxy.send(:include, assoc_mixin)
+      else
+        assoc_mixin = ThinkingSphinx::ActiveRecord::HasManyAssociation
+        ::ActiveRecord::Associations::HasManyAssociation.send(:include, assoc_mixin)
+        ::ActiveRecord::Associations::HasManyThroughAssociation.send(:include, assoc_mixin)
+      end
     end
 
     module ClassMethods
@@ -214,8 +209,7 @@ module ThinkingSphinx
       end
 
       def insert_sphinx_index(index)
-        self.sphinx_indexes << index
-        subclasses.each { |klass| klass.insert_sphinx_index(index) }
+        self.sphinx_indexes += [index]
       end
 
       def has_sphinx_indexes?
@@ -331,8 +325,8 @@ module ThinkingSphinx
         if delta && !delta_indexed_by_sphinx?
           include ThinkingSphinx::ActiveRecord::Delta
 
-          before_save   :toggle_delta
-          after_commit  :index_delta
+          before_save  :toggle_delta
+          after_commit :index_delta
         end
       end
 

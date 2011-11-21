@@ -16,7 +16,6 @@ Jeweler::Tasks.new do |gem|
     "LICENCE",
     "README.textile",
     "tasks/**/*.rb",
-    "tasks/**/*.rake",
     "VERSION"
   ]
   gem.test_files = FileList[

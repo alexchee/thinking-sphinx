@@ -57,6 +57,10 @@ module ThinkingSphinx
       ThinkingSphinx.facets(*args)
     end
 
+    def self.warn(message)
+      ::ActiveSupport::Deprecation.warn message
+    end
+
     def self.bundle_searches(enum = nil)
       bundle = ThinkingSphinx::BundledSearch.new
 
@@ -100,6 +104,11 @@ module ThinkingSphinx
       populate
       @array.freeze
       self
+    end
+
+    def as_json(*args)
+      populate
+      @array.as_json(*args)
     end
 
     # Indication of whether the request has been made to Sphinx for the search
@@ -403,17 +412,16 @@ module ThinkingSphinx
 
       retry_on_stale_index do
         begin
-          log "Querying: '#{query}'"
-          runtime = Benchmark.realtime {
+          log query do
             @results = client.query query, indexes, comment
-          }
-          log "Found #{@results[:total_found]} results", :debug,
-            "Sphinx (#{sprintf("%f", runtime)}s)"
+          end
+          total = @results[:total_found].to_i
+          log "Found #{total} result#{'s' unless total == 1}"
 
-          log "Sphinx Daemon returned warning: #{warning}", :error if warning?
+          log "Sphinx Daemon returned warning: #{warning}" if warning?
 
           if error?
-            log "Sphinx Daemon returned error: #{error}", :error
+            log "Sphinx Daemon returned error: #{error}"
             raise SphinxError.new(error, @results) unless options[:ignore_errors]
           end
         rescue Riddle::ConnectionError => err
@@ -519,23 +527,23 @@ module ThinkingSphinx
       }
     end
 
-    def self.log(message, method = :debug, identifier = 'Sphinx')
-      return if ::ActiveRecord::Base.logger.nil?
-
-      info = ''
-      if ::ActiveRecord::Base.colorize_logging
-        identifier_color, message_color = "4;32;1", "0" # 0;1 = Bold
-        info << "  \e[#{identifier_color}m#{identifier}\e[0m   "
-        info << "\e[#{message_color}m#{message}\e[0m"
-      else
-        info = "#{identifier}   #{message}"
+    def self.log(message, &block)
+      if ThinkingSphinx::ActiveRecord::LogSubscriber.logger.nil?
+        yield if block_given?
+        return
       end
 
-      ::ActiveRecord::Base.logger.send method, info
+      if block_given?
+        ::ActiveSupport::Notifications.
+          instrument('query.thinking_sphinx', :query => message, &block)
+      else
+        ::ActiveSupport::Notifications.
+          instrument('message.thinking_sphinx', :message => message)
+      end
     end
 
-    def log(*args)
-      self.class.log(*args)
+    def log(query, &block)
+      self.class.log(query, &block)
     end
 
     def prepare(client)
@@ -590,7 +598,7 @@ module ThinkingSphinx
         # ID exclusion
         options[:without_ids] = Array(options[:without_ids]) | err.ids
 
-        log 'Sphinx Stale Ids (%s %s left): %s' % [
+        log 'Stale Ids (%s %s left): %s' % [
           retries, (retries == 1 ? 'try' : 'tries'), stale_ids.join(', ')
         ]
         retry

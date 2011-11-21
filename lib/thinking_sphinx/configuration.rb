@@ -5,7 +5,7 @@ module ThinkingSphinx
   # This class both keeps track of the configuration settings for Sphinx and
   # also generates the resulting file for Sphinx to use.
   #
-  # Here are the default settings, relative to RAILS_ROOT where relevant:
+  # Here are the default settings, relative to Rails.root where relevant:
   #
   # config file::           config/#{environment}.sphinx.conf
   # searchd log file::      log/searchd.log
@@ -90,7 +90,7 @@ module ThinkingSphinx
       else
         self.app_root   = Merb.root                  if defined?(Merb)
         self.app_root   = Sinatra::Application.root  if defined?(Sinatra)
-        self.app_root   = RAILS_ROOT                 if defined?(RAILS_ROOT)
+        self.app_root   = Rails.root                 if defined?(Rails)
         self.app_root ||= app_root
       end
 
@@ -107,8 +107,7 @@ module ThinkingSphinx
       self.searchd_file_path    = "#{self.app_root}/db/sphinx/#{environment}"
       self.allow_star           = false
       self.stop_timeout         = 5
-      self.model_directories    = ["#{app_root}/app/models/"] +
-        Dir.glob("#{app_root}/vendor/plugins/*/app/models/")
+      self.model_directories    = initial_model_directories
       self.delayed_job_priority = 0
       self.indexed_models       = []
       self.shuffle              = true
@@ -132,8 +131,8 @@ module ThinkingSphinx
     def self.environment
       @@environment ||= if defined?(Merb)
         Merb.environment
-      elsif defined?(RAILS_ENV)
-        RAILS_ENV
+      elsif defined?(Rails)
+        Rails.env
       elsif defined?(Sinatra)
         Sinatra::Application.environment.to_s
       else
@@ -265,7 +264,7 @@ module ThinkingSphinx
       @models_by_crc ||= begin
         ThinkingSphinx.context.indexed_models.inject({}) do |hash, model|
           hash[model.constantize.to_crc32] = model
-          Object.subclasses_of(model.constantize).each { |subclass|
+          model.constantize.descendants.each { |subclass|
             hash[subclass.to_crc32] = subclass.name
           }
           hash
@@ -346,6 +345,20 @@ module ThinkingSphinx
       else
         address.sort_by { rand }
       end
+    end
+
+    def initial_model_directories
+      directories = ["#{app_root}/app/models/"] +
+        Dir.glob("#{app_root}/vendor/plugins/*/app/models/")
+
+      if defined?(Rails)
+        directories += Rails.application.paths['app/models'].to_a
+        directories += Rails.application.railties.engines.collect { |engine|
+          engine.paths['app/models'].to_a
+	      }.flatten
+      end
+
+      directories
     end
   end
 end
