@@ -1,4 +1,9 @@
 Thinking Sphinx
 ===============
+This is a fork of Pat Allan's Thinking Sphinx 'v2' branch [https://github.com/pat/thinking-sphinx](https://github.com/pat/thinking-sphinx), with an extra option :ignore_connection_errors to ThinkingSphinx::Search that will silently fail on Errno::ECONNREFUSED errors if set to true.
 
-Please see [https://github.com/pat/thinking-sphinx](https://github.com/pat/thinking-sphinx) - Pat has changed github usernames. You may want to update any remotes and Gemfiles that reference this repository directly.
+Ex.
+```
+ThinkingSphinx::Search.new(:ignore_connection_errors => true)
+```
+This will return empty results if an Errno::ECONNREFUSED occurs.
